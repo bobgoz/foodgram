@@ -15,20 +15,31 @@ class Recipe(models.Model):
     name = models.CharField('Название', max_length=256)
     text = models.TextField('Описание')
     ingredients = models.ManyToManyField(
-        'Ingredient', verbose_name='Список ингредиентов')
-    image = models.BinaryField('Картинка, закодированная в Base64')
+        'Ingredient',
+        through='RecipeIngredient',
+        verbose_name='Список ингредиентов')
+    image = models.BinaryField(
+        'Картинка, закодированная в Base64', 
+        blank=False,
+        null=False,
+    )
     tags = models.ManyToManyField(
         'Tag', verbose_name='id тегов')
-    cooking_time = models.DurationField(
+    cooking_time = models.IntegerField(
         'Время приготовления',
-        default=timedelta(minutes=0),
-        help_text='Длительность приготовления в минутах.'
+        help_text='Длительность приготовления в минутах.',
+        blank=False,
     )
     short_link = models.URLField(
         'Короткая ссылка на рецепт',
         blank=True,
         null=True,
         help_text='Короткая ссылка на рецепт')
+
+    REQUIRED_FIELDS = ['cooking_time']
+
+    def __str__(self):
+        return self.name
 
     class Meta:
         verbose_name = 'Рецепт'
@@ -67,14 +78,30 @@ class Ingredient(models.Model):
         max_length=256,
         help_text='Название ингредиента'
     )
-    unit = models.CharField(
+    measurement_unit = models.CharField(
         'Единица измерения',
         max_length=10,
         choices=UnitOfMeasurement.choices,
         help_text='Единица измерения',
     )
-    
+
     class Meta:
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
         default_related_name = 'ingredients'
+
+
+class RecipeIngredient(models.Model):
+    """Промежуточная модель для связи моделя Рецепт и Ингредиент."""
+
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    amount = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recipe', 'ingredient'],
+                name='unique_ingredient_in_recipe'
+            )
+        ]

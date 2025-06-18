@@ -1,16 +1,14 @@
-from rest_framework.routers import SimpleRouter
+from rest_framework.routers import SimpleRouter, DefaultRouter
 
 from .views import (RecipeViewSet, 
                     IngredientViewSet, 
-                    TagViewSet, 
-                    UserViewSet, 
-                    AuthViewSet,
+                    TagViewSet,
+                    CustomUserViewSet,
                 )
 
-router = SimpleRouter()
+router = DefaultRouter()
 
 router.register('recipes', RecipeViewSet)
 router.register('tags', TagViewSet)
-router.register('users', UserViewSet)
 router.register('ingredients', IngredientViewSet)
-router.register('auth/token', AuthViewSet, basename='auth')
+router.register('users', CustomUserViewSet)

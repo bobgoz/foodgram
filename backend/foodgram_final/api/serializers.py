@@ -6,26 +6,23 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.http import Http404
 from django.http import HttpResponse
+from django.contrib.auth import authenticate
+from django.utils.translation import gettext_lazy as _
 
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from drf_base64.fields import Base64ImageField
 
 from rest_framework import serializers
 from rest_framework import status
 from rest_framework.validators import UniqueValidator
 from rest_framework.response import Response
 
+from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
+
 from foodgram.models import Recipe, Tag, Ingredient
 from .validators import validate_forbidden_usernames
 from .utils import send_confirm_mail
 
 User = get_user_model()
-
-class RecipeSerializer(serializers.ModelSerializer):
-    """Сериализатор для модели Рецепты. """
-
-    class Meta:
-        fields = '__all__'
-        model = Recipe
 
 
 class TagSerializer(serializers.ModelSerializer):
@@ -39,6 +36,9 @@ class TagSerializer(serializers.ModelSerializer):
 class IngredientSerializer(serializers.ModelSerializer):
     """Сериализатор для модели Ингредиент"""
 
+    measurement_unit = serializers.CharField()
+    name = serializers.CharField()
+
     class Meta:
         fields = '__all__'
         model = Ingredient
@@ -49,8 +49,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         fields = (
-            'email',
             'id',
+            'email',
             'username',
             'first_name',
             'last_name',
@@ -60,98 +60,148 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
 
 
-class UserRegistrationsSerializer(serializers.Serializer):
-    """Сериализатор для регистрации пользователя."""
+class UserCreateSerializer(BaseUserCreateSerializer):
+    class Meta(BaseUserCreateSerializer.Meta):
 
-    username = serializers.CharField(
-        max_length=150,
-        required=True,
-        validators=[
-            UnicodeUsernameValidator(),
-            RegexValidator(
-                regex='^[\w.@+-]+$',
-                message=(
-                    'Имя пользователя содержит недопустимые символы'
-                )
-            ),
-            validate_forbidden_usernames,
-            UniqueValidator(queryset=User.objects.all(),
-                            message='Этот username уже используется'),
-        ],
-    )
-    first_name = serializers.CharField(
-        max_length=150,
-        required=True,)
-    last_name = serializers.CharField(
-        max_length=150,
-        required=True,)
-    email = serializers.EmailField(
-        max_length=254,
-        required=True,
-        validators=[
-            UniqueValidator(queryset=User.objects.all(),
-                            message='Этот email уже используется.')
+        fields = [
+            'email', 
+            'username', 
+            'first_name', 
+            'last_name', 
+            'password',
+            're_password'
         ]
+        
+    def get_is_subscribed(self, obj):
+        # Логика проверки подписки
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.following.filter(user=request.user).exists()
+        return False
+
+    def get_avatar(self, obj):
+        if obj.avatar:
+            return self.context['request'].build_absolute_uri(obj.avatar.url)
+        return None
+
+
+class RecipeSerializer(serializers.ModelSerializer):
+    """Сериализатор для модели Рецепты. """
+
+    tags = TagSerializer(many=True, read_only=True)
+    author = UserCreateSerializer(read_only=True)
+    ingredients = serializers.SerializerMethodField()
+    is_favorited = serializers.SerializerMethodField()
+    is_in_shopping_cart = serializers.SerializerMethodField()
+    image = Base64ImageField(required=True)
+
+    class Meta:
+        fields = (
+            'name',
+            'text',
+            'ingredients',
+            'image',
+            'tags',
+            'cooking_time',
+        )
+        model = Recipe
+
+    def get_ingredients(self, obj):
+        ingredients = obj.ingredients.through.objects.filter(recipe=obj)
+        return [{
+            'id': ing.ingredient.id,
+            'name': ing.ingredient.name,
+            'measurement_unit': ing.ingredient.measurement_unit,
+            'amount': ing.amount
+        } for ing in ingredients]
+
+    def get_is_favorited(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.favorites.filter(user=request.user).exists()
+        return False
+
+    def get_is_in_shopping_cart(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.shopping_carts.filter(user=request.user).exists()
+        return False
+
+
+class RecipeIngredientInputSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    amount = serializers.IntegerField(min_value=1)
+
+
+class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
+    """Сериализатор для создания и обновления рецептов."""
+
+    ingredients = RecipeIngredientInputSerializer(many=True)
+    tags = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Tag.objects.all()
     )
-    password = serializers.CharField(
-        write_only=True,  # Пароль никогда не возвращается в ответах API
-        required=True,
-        min_length=8,
-        max_length=128,
-        trim_whitespace=False,  # Запрет на обрезку пробелов
-        error_messages={
-            'min_length': 'Пароль должен содержать минимум 8 символов.',
-            'blank': 'Пароль не может быть пустым.'
-        }
-    )
+    image = Base64ImageField(required=True)
+
+    class Meta:
+        fields = (
+            'name',
+            'text',
+            'ingredients',
+            'image',
+            'tags',
+            'cooking_time',
+        )
+        model = Recipe
 
     def create(self, validated_data):
-        user, _ = User.objects.get_or_create(**validated_data)
-        confirmation_code = default_token_generator.make_token(user)
-        send_confirm_mail(user, confirmation_code)
-        return user
+        """Обработка ингредиентов и тегов."""
 
+        ingredients_data = validated_data.pop('ingredients')
+        tags_data = validated_data.pop('tags')
 
-class TokenSerializer(serializers.Serializer):
-    """
-    Сериализатор для получения токена.
+        recipe = Recipe.objects.create(
+            author=self.context['request'].user,
+            **validated_data
+        )
 
-    Используется для валидации данных (username и confirmation_code)
-    при запросе токена.
-
-    Атрибуты:
-        username (CharField):  Имя пользователя.
-        confirmation_code (CharField): Код подтверждения.
-    """
-    confirmation_code = serializers.CharField(required=True)
-    username = serializers.CharField(
-        max_length=150,
-        required=True,
-    )
-
-    def validate(self, data):
-        """Проверка валидности кода подтверждения."""
-        user = get_object_or_404(User, username=data['username'])
-        if not default_token_generator.check_token(
-            user,
-            data['confirmation_code'],
-        ):
-            raise serializers.ValidationError(
-                {'confirmation_code': 'Неверный код подтверждения'}
+        # Создание связей с ингредиентами.
+        for ingredient_data in ingredients_data:
+            recipe.ingredients.add(
+                ingredient_data['id'],
+                through_defaults={'amount': ingredient_data['amount']}
             )
-        return data
 
-    def create(self, validated_data):
-        """Активация пользователя и возвращение токена"""
+        # Добавление тегов.
+        recipe.tags.set(tags_data)
 
-        username = validated_data['username']
-        user = get_object_or_404(User, username=username)
-        user.is_active = True
-        user.save()
-        token = AccessToken.for_user(user)
-        refresh_token = RefreshToken.for_user(user)
-        return {
-            'username': user.username,
-            'token': str(token),
-            'refresh_token': str(refresh_token),
-        }
+        return recipe
+
+    def update(self, instance, validated_data):
+        ingredients_data = validated_data.pop('ingredients', None)
+        tags_data = validated_data.pop('tags', None)
+
+        # Обновляем основные поля
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Обновляем теги если они пришли
+        if tags_data is not None:
+            instance.tags.set(tags_data)
+
+        # Обновляем ингредиенты если они пришли
+        if ingredients_data is not None:
+            instance.ingredients.clear()
+            for ingredient_data in ingredients_data:
+                instance.ingredients.add(
+                    ingredient_data['id'],
+                    through_defaults={'amount': ingredient_data['amount']}
+                )
+
+        return instance
+
+    def to_representation(self, instance):
+        # После создания/обновления возвращаем 
+        # данные в формате основного сериализатора
+        return RecipeSerializer(instance, context=self.context).data
