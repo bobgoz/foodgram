@@ -20,7 +20,7 @@ from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
 
 from foodgram.models import Recipe, Tag, Ingredient
 from .validators import validate_forbidden_usernames
-from .utils import send_confirm_mail
+from .utils import send_confirm_mail, Base64BinaryField
 
 User = get_user_model()
 
@@ -45,33 +45,13 @@ class IngredientSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Сериализатор для модели пользователя (User)"""
+    is_subscribed = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
-        fields = (
-            'id',
-            'email',
-            'username',
-            'first_name',
-            'last_name',
-            'is_subscribed',
-            'avatar',
-        )
         model = User
+        fields = ('email', 'id', 'username', 'first_name', 'last_name', 'is_subscribed', 'avatar')
 
-
-class UserCreateSerializer(BaseUserCreateSerializer):
-    class Meta(BaseUserCreateSerializer.Meta):
-
-        fields = [
-            'email', 
-            'username', 
-            'first_name', 
-            'last_name', 
-            'password',
-            're_password'
-        ]
-        
     def get_is_subscribed(self, obj):
         # Логика проверки подписки
         request = self.context.get('request')
@@ -89,11 +69,11 @@ class RecipeSerializer(serializers.ModelSerializer):
     """Сериализатор для модели Рецепты. """
 
     tags = TagSerializer(many=True, read_only=True)
-    author = UserCreateSerializer(read_only=True)
+    author = UserSerializer(read_only=True)
     ingredients = serializers.SerializerMethodField()
     is_favorited = serializers.SerializerMethodField()
     is_in_shopping_cart = serializers.SerializerMethodField()
-    image = Base64ImageField(required=True)
+    image = Base64BinaryField(required=True)
 
     class Meta:
         fields = (
@@ -161,9 +141,9 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
         tags_data = validated_data.pop('tags')
 
         recipe = Recipe.objects.create(
-            author=self.context['request'].user,
             **validated_data
         )
+        
 
         # Создание связей с ингредиентами.
         for ingredient_data in ingredients_data:

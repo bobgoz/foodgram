@@ -22,7 +22,6 @@ from .serializers import (
     IngredientSerializer,
     RecipeCreateUpdateSerializer,
     RecipeIngredientInputSerializer,
-    UserCreateSerializer,
     UserSerializer
     )
 
@@ -35,50 +34,48 @@ class CustomUserViewSet(UserViewSet):
     pagination_class = PageNumberPagination
     serializer_class = UserSerializer
 
-    # @action(detail=False, methods=['POST', 'DELETE'])
-    # def subscribe(self, request, pk=None):
-    #     """Создаёт эндпоинт для подписки на пользователей и отписки."""
-    #     pass
+    @action(detail=False, methods=['POST', 'DELETE'])
+    def subscribe(self, request, pk=None):
+        """Создаёт эндпоинт для подписки на пользователей и отписки."""
+        pass
 
-    # @action(detail=False, methods=['PUT', 'DELETE'], url_path='me/avatar')
-    # def load_and_delete_avatar(self, request, pk=None):
-    #     """Создаёт эндпоинт для добавления/удаления аватара"""
+    @action(detail=False, methods=['PUT', 'DELETE'], url_path='me/avatar')
+    def load_and_delete_avatar(self, request, pk=None):
+        """Создаёт эндпоинт для добавления/удаления аватара"""
 
-    #     if request.method == 'PUT':
-    #         if 'avatar' not in request.data:
-    #             return Response({'error': 'Файл аватара не предоставлен'},
-    #                             status=status.HTTP_400_BAD_REQUEST)
-    #         avatar_file = request.data['avatar']
+        if request.method == 'PUT':
+            if 'avatar' not in request.data:
+                return Response({'error': 'Файл аватара не предоставлен'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            avatar_file = request.data['avatar']
 
-    #         if not hasattr(avatar_file, 'file'):
-    #             return Response(
-    #                 {'error': 'Неправильный формат файла.'},
-    #                 status=status.HTTP_400_BAD_REQUEST)
-    #         try:
-    #             avatar_data = avatar_file.read()
-    #             request.user.avatar = avatar_data
-    #             request.user.save()
+            if not hasattr(avatar_file, 'file'):
+                return Response(
+                    {'error': 'Неправильный формат файла.'},
+                    status=status.HTTP_400_BAD_REQUEST)
+            try:
+                avatar_data = avatar_file.read()
+                request.user.avatar = avatar_data
+                request.user.save()
 
-    #             return Response(
-    #                 {'status': 'Аватар загружен'}, 
-    #                 status=status.HTTP_200_OK)
-    #         except Exception as e:
-    #             return Response(
-    #                 {'error': str(e)},
-    #                 status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    #     elif request.method == 'DELETE':
-    #         request.user.avatar = None
-    #         request.user.save()
+                return Response(
+                    {'status': 'Аватар загружен'}, 
+                    status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        elif request.method == 'DELETE':
+            request.user.avatar = None
+            request.user.save()
 
-    # @action(detail=False, methods=['GET'])
-    # def subscriptions(self, request, pk=None):
-    #     """Создаёт эндпоинт, который возвращает
-    #     список пользователей на которых подписан
-    #     текущий пользователь.
-    #     """
-    #     pass
-    
-    
+    @action(detail=False, methods=['GET'])
+    def subscriptions(self, request, pk=None):
+        """Создаёт эндпоинт, который возвращает
+        список пользователей на которых подписан
+        текущий пользователь.
+        """
+        pass
 
 
 class RecipeViewSet(ModelViewSet):

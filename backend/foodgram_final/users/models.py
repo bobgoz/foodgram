@@ -10,7 +10,7 @@ class User(AbstractUser):
     username = models.CharField('Имя пользователя',
                                 unique=True, max_length=150, blank=False)
     avatar = models.BinaryField(
-        'Картинка, закодированная в Base64', blank=True, null=True)
+        'Картинка, закодированная в Base64', blank=True, null=True, default=b'')
     is_subscribed = models.BooleanField('Подписка', default=False)
     is_active = models.BooleanField(default=True)
     first_name = models.CharField('Имя', max_length=150, blank=False)
