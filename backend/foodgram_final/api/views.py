@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.core.files.base import ContentFile
 
 from rest_framework.viewsets import ModelViewSet, GenericViewSet, ViewSet
 from rest_framework.decorators import action, api_view
@@ -11,6 +12,9 @@ from rest_framework.mixins import (ListModelMixin,
                                    CreateModelMixin)
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FileUploadParser
+
+import base64
+import filetype
 
 
 from djoser.views import UserViewSet
@@ -43,31 +47,53 @@ class CustomUserViewSet(UserViewSet):
     def load_and_delete_avatar(self, request, pk=None):
         """Создаёт эндпоинт для добавления/удаления аватара"""
 
+        user = request.user
+
         if request.method == 'PUT':
-            if 'avatar' not in request.data:
-                return Response({'error': 'Файл аватара не предоставлен'},
-                                status=status.HTTP_400_BAD_REQUEST)
-            avatar_file = request.data['avatar']
+            avatar_data = request.data.get('avatar')
 
-            if not hasattr(avatar_file, 'file'):
+            if not avatar_data:
                 return Response(
-                    {'error': 'Неправильный формат файла.'},
-                    status=status.HTTP_400_BAD_REQUEST)
+                    {'avatar': 'Обязательное поле'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             try:
-                avatar_data = avatar_file.read()
-                request.user.avatar = avatar_data
-                request.user.save()
+                format, imgstr = avatar_data.split(';base64,')
+                img_bytes = base64.b64decode(imgstr)
 
+                # Проверяем тип изображения через filetype
+                kind = filetype.guess(img_bytes)
+                if kind is None or kind.mime not in ['image/jpeg', 'image/png', 'image/gif']:
+                    return Response(
+                        {"error": "Invalid image format. Only JPEG, PNG, and GIF are allowed."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                ext = kind.extension
+                data = ContentFile(img_bytes, name=f'avatar_{user.id}.{ext}')
+                user.avatar.save(f'avatar_{user.id}.{ext}', data, save=True)
+                
                 return Response(
-                    {'status': 'Аватар загружен'}, 
-                    status=status.HTTP_200_OK)
+                    {"avatar": request.build_absolute_uri(user.avatar.url)},
+                    status=status.HTTP_200_OK
+                )
+                
             except Exception as e:
                 return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    {"error": str(e)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
         elif request.method == 'DELETE':
-            request.user.avatar = None
-            request.user.save()
+            if not user.avatar:
+                return Response(
+                    {"error": "No avatar to delete"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            user.avatar.delete(save=True)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
 
     @action(detail=False, methods=['GET'])
     def subscriptions(self, request, pk=None):

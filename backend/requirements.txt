@@ -16,12 +16,15 @@ djoser==2.3.1
 drf_base64==2.0
 fastapi==0.115.12
 filetype==1.2.0
+gunicorn==23.0.0
 h11==0.16.0
 idna==3.10
 line_profiler==4.2.0
 Markdown==3.8
 oauthlib==3.2.2
+packaging==25.0
 pillow==11.2.1
+psycopg2-binary==2.9.10
 pycparser==2.22
 pydantic==2.11.5
 pydantic_core==2.33.2

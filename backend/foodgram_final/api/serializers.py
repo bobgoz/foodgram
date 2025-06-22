@@ -20,7 +20,9 @@ from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
 
 from foodgram.models import Recipe, Tag, Ingredient
 from .validators import validate_forbidden_usernames
-from .utils import send_confirm_mail, Base64BinaryField
+from .utils import send_confirm_mail
+
+from drf_base64.fields import Base64ImageField
 
 User = get_user_model()
 
@@ -54,9 +56,9 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_is_subscribed(self, obj):
         # Логика проверки подписки
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.following.filter(user=request.user).exists()
+        # request = self.context.get('request')
+        # if request and request.user.is_authenticated:
+        #     return obj.following.filter(user=request.user).exists()
         return False
 
     def get_avatar(self, obj):
@@ -73,7 +75,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     ingredients = serializers.SerializerMethodField()
     is_favorited = serializers.SerializerMethodField()
     is_in_shopping_cart = serializers.SerializerMethodField()
-    image = Base64BinaryField(required=True)
+    image = Base64ImageField(required=True)
 
     class Meta:
         fields = (
