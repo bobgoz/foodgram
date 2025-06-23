@@ -2,9 +2,19 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.core.files.base import ContentFile
 
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from django.http import HttpResponse
+
+from django.db.models import Sum
+from foodgram.models import RecipeIngredient
+
+
 from rest_framework.viewsets import ModelViewSet, GenericViewSet, ViewSet
 from rest_framework.decorators import action, api_view
 from rest_framework.permissions import IsAuthenticated, AllowAny, SAFE_METHODS
+from rest_framework import pagination
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.mixins import (ListModelMixin,
@@ -19,7 +29,7 @@ import filetype
 
 from djoser.views import UserViewSet
 
-from foodgram.models import Recipe, Tag, Ingredient
+from foodgram.models import Recipe, Tag, Ingredient, ShoppingCart
 from .serializers import (
     RecipeSerializer,
     TagSerializer,
@@ -109,6 +119,8 @@ class RecipeViewSet(ModelViewSet):
 
     queryset = Recipe.objects.all()
     permission_classes = [IsAuthenticated]
+    pagination_class = pagination.LimitOffsetPagination
+    page_size = 1
 
     def get_serializer_class(self):
         if self.action in SAFE_METHODS:
@@ -127,16 +139,76 @@ class RecipeViewSet(ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def download_shopping_cart(self, request, pk=None):
-        """Создаёт эндппоинт для скачивания списка покупок."""
-        pass
+        """Генерирует PDF списком покупок."""
+        
+        # данные для PDF
+        shopping_list = self._generate_shopping_list(request.user)
+        
+        # Создание PDF
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
 
+        # Настройки документа
+        p.setFont('Helvetica', 12)
+        y_position = 750
+        
+        # Заголовок
+        p.drawString(100, y_position, 'Список покупок')
+        y_position -= 30
 
-    @action(detail=False, methods=['POST', 'DELETE'])
+        # Содержимое
+        for item in shopping_list:
+            p.drawString(100, y_position, f"- {item['ingredient__name']} ({item['amount']} {item['ingredient__measurement_unit']})")
+            y_position -= 20
+            if y_position < 50:  # Если конец страницы
+                p.showPage()
+                y_position = 750
+                p.setFont("Helvetica", 12)
+
+        p.save()
+
+        # Возвращение PDF как ответ
+        buffer.seek(0)
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="shopping_list.pdf"'
+        return response
+
+    def _generateshopping_list(self, user):
+        """Генерирует список ингредиентв."""
+
+        return (
+            RecipeIngredient.objects
+            .filter(recipe__shopping_carts__user=user)
+            .values('ingredient__name', 'ingredient__measurement_unit')
+            .annotate(total=Sum('amount'))
+            .order_by('ingredient__name')
+        )
+
+    @action(detail=True, methods=['POST', 'DELETE'])
     def shopping_cart(self, request, pk=None):
         """Создаёт эндпоинт для добавления рецепта
         в список покупок и его удаления.
         """
-        pass
+
+        recipe = get_object_or_404(Recipe, id=pk)
+
+        if request.method == 'POST':
+            ShoppingCart.objects.create(user=request.user, recipe=recipe)
+
+            response_data = {
+                'id': recipe.id,
+                'name': recipe.name,
+                'image': request.build_absolute_uri(
+                    recipe.image.url) if recipe.image else None,
+                'cooking_time': recipe.cooking_time
+            }
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        if request.method == 'DELETE':
+            cart_item = get_object_or_404(
+                ShoppingCart, user=request.user, recipe=recipe)
+            cart_item.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TagViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):

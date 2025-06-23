@@ -18,10 +18,11 @@ class Recipe(models.Model):
         'Ingredient',
         through='RecipeIngredient',
         verbose_name='Список ингредиентов')
-    image = models.BinaryField(
-        'Картинка, закодированная в Base64', 
-        blank=False,
+    image = models.ImageField(
+        'Фотография блюда',
+        upload_to='recipes/images',
         null=False,
+        default=None,
     )
     tags = models.ManyToManyField(
         'Tag', verbose_name='id тегов')
@@ -105,3 +106,35 @@ class RecipeIngredient(models.Model):
                 name='unique_ingredient_in_recipe'
             )
         ]
+
+
+class ShoppingCart(models.Model):
+    """Модель для Списка Покупок."""
+
+    recipe = models.ForeignKey(Recipe, 
+                               on_delete=models.CASCADE,
+                               verbose_name='Рецепт',
+                               related_name='in_shopping_carts',
+                               )
+    user = models.ForeignKey(User,
+                             on_delete=models.CASCADE,
+                             verbose_name='Пользователь',
+                             related_name='shopping_cart',
+                             )
+    added_at = models.DateTimeField('Дата и время добавления в список покупок',
+                                    auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'recipe'],
+                name='unique_user_recipe_in_cart',
+            )
+        ]
+        verbose_name = 'Корзина покупок'
+        verbose_name_plural = 'Корзины покупок'
+
+    def __str__(self):
+        return f'{self.user} -> {self.recipe}'
+
+    
