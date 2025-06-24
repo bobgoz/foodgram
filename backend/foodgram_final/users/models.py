@@ -14,7 +14,7 @@ class User(AbstractUser):
         upload_to='recipes/images/',
         null=True,
         default=None,
-        )
+    )
     is_subscribed = models.BooleanField('Подписка', default=False)
     is_active = models.BooleanField(default=True)
     first_name = models.CharField('Имя', max_length=150, blank=False)
@@ -30,3 +30,4 @@ class User(AbstractUser):
         verbose_name = 'Пользователь'
         verbose_name_plural = 'Пользователи'
         default_related_name = 'users'
+

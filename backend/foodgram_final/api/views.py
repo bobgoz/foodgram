@@ -8,7 +8,8 @@ from reportlab.lib.pagesizes import letter
 from django.http import HttpResponse
 
 from django.db.models import Sum
-from foodgram.models import RecipeIngredient
+from django.db import models
+
 
 
 from rest_framework.viewsets import ModelViewSet, GenericViewSet, ViewSet
@@ -29,14 +30,22 @@ import filetype
 
 from djoser.views import UserViewSet
 
-from foodgram.models import Recipe, Tag, Ingredient, ShoppingCart
+from foodgram.models import (
+    Recipe,
+    Tag,
+    Ingredient,
+    ShoppingCart,
+    Subscription,
+    RecipeIngredient)
+
 from .serializers import (
     RecipeSerializer,
     TagSerializer,
     IngredientSerializer,
     RecipeCreateUpdateSerializer,
     RecipeIngredientInputSerializer,
-    UserSerializer
+    UserSerializer,
+    SubscriptionSerializer,
     )
 
 User = get_user_model()
@@ -47,6 +56,9 @@ class CustomUserViewSet(UserViewSet):
 
     pagination_class = PageNumberPagination
     serializer_class = UserSerializer
+
+    def get_queryset(self):
+        return User.objects.prefetch_related('following').all()
 
     @action(detail=False, methods=['POST', 'DELETE'])
     def subscribe(self, request, pk=None):
@@ -111,7 +123,33 @@ class CustomUserViewSet(UserViewSet):
         список пользователей на которых подписан
         текущий пользователь.
         """
-        pass
+        
+        # Получаем подписки текущего пользователя
+        subscriptions = Subscription.objects.filter(user=request.user)
+        
+        # Оптимизация запросов
+        authors = User.objects.filter(
+            id__in=subscriptions.values('author')
+        ).prefetch_related(
+            models.Prefetch('recipes', queryset=Recipe.objects.all()[:3])  # последние 3 рецепта
+        )
+        
+        # Пагинация
+        page = self.paginate_queryset(authors)
+        if page is not None:
+            serializer = SubscriptionSerializer(
+                page,
+                many=True,
+                context={'request': request}
+            )
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = SubscriptionSerializer(
+            authors,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
 
 
 class RecipeViewSet(ModelViewSet):
@@ -223,4 +261,16 @@ class IngredientViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):
 
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
+
+
+class SubscriptionViewSet(ModelViewSet):
+    """ViewSet для модели Подписки."""
+    
+    queryset = Subscription.objects.all()
+    serializer_class = SubscriptionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.user)
+    
 

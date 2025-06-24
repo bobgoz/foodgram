@@ -4,6 +4,7 @@ from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.validators import RegexValidator
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.db import models
 from django.http import Http404
 from django.http import HttpResponse
 from django.contrib.auth import authenticate
@@ -18,7 +19,7 @@ from rest_framework.response import Response
 
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
 
-from foodgram.models import Recipe, Tag, Ingredient
+from foodgram.models import Recipe, Tag, Ingredient, Subscription, Favorite, ShoppingCart
 from .validators import validate_forbidden_usernames
 from .utils import send_confirm_mail
 
@@ -55,13 +56,15 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('email', 'id', 'username', 'first_name', 'last_name', 'is_subscribed', 'avatar')
 
     def get_is_subscribed(self, obj):
-        # Логика проверки подписки
-        # request = self.context.get('request')
-        # if request and request.user.is_authenticated:
-        #     return obj.following.filter(user=request.user).exists()
+        """Проверка подписки."""
+
+        request = self.context.get('request')
+        if request:
+            return obj.following.filter(user=request.user).exists()
         return False
 
     def get_avatar(self, obj):
+
         if obj.avatar:
             return self.context['request'].build_absolute_uri(obj.avatar.url)
         return None
@@ -191,3 +194,27 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
         # После создания/обновления возвращаем 
         # данные в формате основного сериализатора
         return RecipeSerializer(instance, context=self.context).data
+
+
+class RecipeShortSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Recipe
+        fields = ('id', 'name', 'image', 'cooking_time')
+
+
+class SubscriptionSerializer(serializers.ModelSerializer):
+    """Сериализатор для модели Subscription"""
+    recipes = RecipeShortSerializer(many=True, read_only=True)
+    recipes_count = serializers.SerializerMethodField()
+    is_subscribed = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Subscription
+        fields = '__all__'
+
+    def get_recipes_count(self, obj):
+        return obj.recipes.count()
+
+    def get_is_subscribed(self, obj):
+        # Всегда True, так как это эндпоинт подписок
+        return True

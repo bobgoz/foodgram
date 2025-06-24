@@ -137,4 +137,75 @@ class ShoppingCart(models.Model):
     def __str__(self):
         return f'{self.user} -> {self.recipe}'
 
-    
+
+class Subscription(models.Model):
+    """Модель для Подписок."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='follower',
+        verbose_name='Подписчик',
+        )
+    author = models.ForeignKey(
+        User,
+        verbose_name='Автор',
+        on_delete=models.CASCADE,
+        related_name='following',
+        )
+    created_at = models.DateTimeField(
+        'Дата подписки',
+        auto_now_add=True,
+        )
+
+    class Meta:
+        verbose_name = 'Подписка'
+        verbose_name_plural = 'Подписки'
+        constraints = [
+            # Запрещает дублирование подписки
+            models.UniqueConstraint(
+                fields=['user', 'author'],
+                name='unique_subscription'
+            ),
+            # Запрещает подписку на себя.
+            models.CheckConstraint(
+                check=~models.Q(user=models.F('author')),
+                name='prevent_self_subscription'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} подписан на {self.author}'
+
+
+class Favorite(models.Model):
+    """Модель для Избранного."""
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='favorites',
+        verbose_name='Пользователь'
+    )
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name='favorites',
+        verbose_name='Рецепт'
+    )
+    added_at = models.DateTimeField(
+        'Дата добавления в список',
+        auto_now_add=True,
+        )
+
+    class Meta:
+        verbose_name = 'Избранное'
+        verbose_name_plural = 'Избранные'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'recipe'],
+                name='unique_favorite'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} добавил {self.recipe} в избранное'
