@@ -75,7 +75,7 @@ class TokenAdmin(admin.ModelAdmin):
         'short_url',
         'requests_count',
         'created_at',
-        'is_active'
+        'is_active',
     )
     search_fields = ('full_url', 'short_url')
     ordering = ('-created_at',)
