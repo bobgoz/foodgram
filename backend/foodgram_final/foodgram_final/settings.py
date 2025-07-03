@@ -1,10 +1,5 @@
 from pathlib import Path
-from datetime import timedelta
 import os
-
-from dotenv import load_dotenv
-
-# load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +26,7 @@ INSTALLED_APPS = [
     'api.apps.ApiConfig',
     'foodgram.apps.FoodgramConfig',
     'users.apps.UsersConfig',
+    'django_filters',
 ]
 
 
@@ -63,8 +59,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'foodgram_final.wsgi.application'
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
@@ -77,42 +71,39 @@ DATABASES = {
     }
 }
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.TokenAuthentication',
-    ),
-    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
-    # 'PAGE_SIZE': 2,
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.IsAuthenticated',
-    # ],
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': 'db.sqlite3',
+#     }
+# }
 
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+    ],
+    'SEARCH_PARAM': 'name',
+}
 
 DJOSER = {
     'HIDE_USERS': False,
     'LOGIN_FIELD': 'email',
     'USER_CREATE_PASSWORD_RETYPE': False,
+    'PERMISSIONS': {
+        'user_list': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
+        'user': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
+    },
     'SERIALIZERS': {
         'user': 'api.serializers.UserSerializer',
         'user_create': 'djoser.serializers.UserCreateSerializer',
         'current_user': 'api.serializers.UserSerializer',
     },
-    'PERMISSIONS': {
-        'user_list': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
-        'user': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
-    },
 }
 
-
-# Настройки почты
-EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
-EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'  # Папка для хранения писем
-DEFAULT_FROM_EMAIL = 'admin@foodgram'
-
-
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -129,11 +120,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ru-RU'
 
 TIME_ZONE = 'UTC'
 
@@ -141,16 +128,17 @@ USE_I18N = True
 
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'backend_static'
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = '/media/'
+
 AUTH_USER_MODEL = 'users.User'
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Параметры для генерации короткой ссылки.
+CHARACTERS = 'ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz234567890'
+TOKEN_LENGTH = 6
+BASE_SHORT_URL = '127.0.0.1:7000/api/s'

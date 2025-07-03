@@ -1,7 +1,10 @@
 from django.db import models
+from django.urls import reverse
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core import validators
 
-from datetime import timedelta
+from random import choices
 
 User = get_user_model()
 
@@ -10,13 +13,14 @@ class Recipe(models.Model):
     """Модель для рецептов."""
 
     author = models.ForeignKey(User,
-                               verbose_name='Автор', 
+                               verbose_name='Автор',
                                on_delete=models.CASCADE)
     name = models.CharField('Название', max_length=256)
     text = models.TextField('Описание')
     ingredients = models.ManyToManyField(
         'Ingredient',
         through='RecipeIngredient',
+        through_fields=('recipe', 'ingredient'),
         verbose_name='Список ингредиентов')
     image = models.ImageField(
         'Фотография блюда',
@@ -30,12 +34,20 @@ class Recipe(models.Model):
         'Время приготовления',
         help_text='Длительность приготовления в минутах.',
         blank=False,
+        validators=[validators.MinValueValidator(1)],
     )
     short_link = models.URLField(
         'Короткая ссылка на рецепт',
         blank=True,
         null=True,
         help_text='Короткая ссылка на рецепт')
+    created_at = models.DateTimeField(
+        "Дата добавления",
+        auto_now_add=True,
+        db_index=True,
+        null=True,
+        blank=True,
+    )
 
     REQUIRED_FIELDS = ['cooking_time']
 
@@ -46,15 +58,31 @@ class Recipe(models.Model):
         verbose_name = 'Рецепт'
         verbose_name_plural = 'Рецепты'
         default_related_name = 'recipes'
+        ordering = ['-created_at']
+
+    def get_absolute_url(self):
+        """
+        Удаление префикса 'api/', если он есть,
+        и возвращение полной ссылки.
+        """
+        return reverse(
+            'recipe-detail', kwargs={'pk': self.pk}).replace('api/', '', 1)
 
 
 class Tag(models.Model):
     """Модель для тегов"""
 
     name = models.CharField('Название',
-                            max_length=128, 
+                            max_length=128,
                             help_text='Название тэга')
-    slug = models.SlugField('Тэг', help_text='Слаг тэга')
+    slug = models.SlugField(
+        'Тэг',
+        help_text='Слэг тэга',
+        unique=True,
+    )
+
+    def __str__(self):
+        return self.name
 
     class Meta:
         verbose_name = 'Тэг'
@@ -68,14 +96,14 @@ class Ingredient(models.Model):
     class UnitOfMeasurement(models.TextChoices):
         """Задаёт константы с единицами измерения."""
 
-        GRAM = 'g', 'Грамм'
-        KILOGRAM = 'kg', 'Килограмм'
-        LITER = 'l', 'Литр'
-        MILLILITER = 'ml', 'Миллилитр'
-        PIECE = 'pcs', 'Штука'
+        GRAM = 'г', 'Грамм'
+        KILOGRAM = 'кг', 'Килограмм'
+        LITER = 'л', 'Литр'
+        MILLILITER = 'мл', 'Миллилитр'
+        PIECE = 'шт', 'Штука'
 
     name = models.CharField(
-        'Название', 
+        'Название',
         max_length=256,
         help_text='Название ингредиента'
     )
@@ -86,6 +114,13 @@ class Ingredient(models.Model):
         help_text='Единица измерения',
     )
 
+    def __str__(self):
+        return self.name
+
+    @property
+    def favorites_count(self):
+        return self.favorites.count()
+
     class Meta:
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
@@ -95,9 +130,13 @@ class Ingredient(models.Model):
 class RecipeIngredient(models.Model):
     """Промежуточная модель для связи моделя Рецепт и Ингредиент."""
 
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name='recipe_ingredients',
+    )
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
-    amount = models.PositiveIntegerField()
+    amount = models.PositiveSmallIntegerField()
 
     class Meta:
         constraints = [
@@ -111,7 +150,7 @@ class RecipeIngredient(models.Model):
 class ShoppingCart(models.Model):
     """Модель для Списка Покупок."""
 
-    recipe = models.ForeignKey(Recipe, 
+    recipe = models.ForeignKey(Recipe,
                                on_delete=models.CASCADE,
                                verbose_name='Рецепт',
                                related_name='in_shopping_carts',
@@ -144,19 +183,19 @@ class Subscription(models.Model):
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='follower',
         verbose_name='Подписчик',
-        )
+        related_name='follower',
+    )
     author = models.ForeignKey(
         User,
         verbose_name='Автор',
         on_delete=models.CASCADE,
         related_name='following',
-        )
+    )
     created_at = models.DateTimeField(
         'Дата подписки',
         auto_now_add=True,
-        )
+    )
 
     class Meta:
         verbose_name = 'Подписка'
@@ -180,26 +219,26 @@ class Subscription(models.Model):
 
 class Favorite(models.Model):
     """Модель для Избранного."""
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='favorites',
         verbose_name='Пользователь'
     )
     recipe = models.ForeignKey(
         Recipe,
         on_delete=models.CASCADE,
-        related_name='favorites',
-        verbose_name='Рецепт'
+        verbose_name='Рецепт',
     )
     added_at = models.DateTimeField(
         'Дата добавления в список',
         auto_now_add=True,
-        )
+    )
 
     class Meta:
         verbose_name = 'Избранное'
         verbose_name_plural = 'Избранные'
+        default_related_name = 'favorites'
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'recipe'],
@@ -209,3 +248,53 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f'{self.user} добавил {self.recipe} в избранное'
+
+
+class Token(models.Model):
+    """
+    Модель для хранения токенов (наборов символов)
+    для коротких ссылок.
+    """
+
+    full_url = models.URLField('Полная ссылка', unique=True)
+    short_url = models.CharField(
+        'Короткая ссылка',
+        max_length=20,
+        unique=True,
+        db_index=True,
+        blank=True,
+    )
+    requests_count = models.IntegerField(
+        'Счётчик запросов к ссылке',
+        default=0,
+    )
+    created_at = models.DateTimeField(
+        'Дата создания',
+        auto_now_add=True,
+    )
+    is_active = models.BooleanField(
+        'Наличие короткой ссылки.',
+        default=False,
+    )
+
+    class Meta:
+        verbose_name = 'Токен'
+        verbose_name_plural = 'Токены'
+        ordering = ('-created_at',)
+
+    @classmethod
+    def generate_short_url(cls):
+        """Генерирует уникальный короткий URL"""
+        while True:
+            short_url = ''.join(choices(settings.CHARACTERS,
+                                        k=settings.TOKEN_LENGTH))
+            if not cls.objects.filter(short_url=short_url).exists():
+                return short_url
+
+    def save(self, *args, **kwargs):
+        if not self.short_url:
+            self.short_url = self.generate_short_url()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.full_url} -> {self.short_url}'

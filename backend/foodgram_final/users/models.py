@@ -1,5 +1,8 @@
-from django.contrib.auth.models import AbstractUser, UserManager
+from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.contrib.auth.validators import UnicodeUsernameValidator
+
+from api.validators import validate_forbidden_usernames
 
 
 class User(AbstractUser):
@@ -8,7 +11,14 @@ class User(AbstractUser):
 
     email = models.EmailField('Электронная почта', unique=True)
     username = models.CharField('Имя пользователя',
-                                unique=True, max_length=150, blank=False)
+                                unique=True,
+                                max_length=150,
+                                blank=False,
+                                validators=[
+                                    UnicodeUsernameValidator(),
+                                    validate_forbidden_usernames,
+                                ]
+                                )
     avatar = models.ImageField(
         'Картинка',
         upload_to='recipes/images/',
@@ -30,4 +40,3 @@ class User(AbstractUser):
         verbose_name = 'Пользователь'
         verbose_name_plural = 'Пользователи'
         default_related_name = 'users'
-
