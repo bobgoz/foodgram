@@ -342,8 +342,8 @@ class RecipeViewSet(ModelViewSet):
         # Содержимое
         for item in shopping_list:
             amount = item.get('total', 0)
-            text = f"- {item['ingredient__name']} ({amount} {item[
-                'ingredient__measurement_unit']})"
+            text = f"""- {item['ingredient__name']}
+            ({amount} {item['ingredient__measurement_unit']})"""
             p.drawString(100, y_position, text)
             y_position -= 20
 
