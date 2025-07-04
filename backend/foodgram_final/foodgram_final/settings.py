@@ -1,3 +1,4 @@
+import string
 from pathlib import Path
 import os
 
@@ -72,13 +73,6 @@ DATABASES = {
     }
 }
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': 'db.sqlite3',
-#     }
-# }
-
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -140,6 +134,6 @@ AUTH_USER_MODEL = 'users.User'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Параметры для генерации короткой ссылки.
-CHARACTERS = 'ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz234567890'
+CHARACTERS = f'{string.ascii_letters} + {string.digits}'
 TOKEN_LENGTH = 6
-BASE_SHORT_URL = '127.0.0.1:7000/api/s'
+BASE_SHORT_URL = 'foodgram-bobgoz.duckdns.org/api/s'
