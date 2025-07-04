@@ -234,10 +234,10 @@ class RecipeViewSet(ModelViewSet):
 
         if 'ingredients' in request.data:
             for ingredient in request.data['ingredients']:
-                if not Ingredient.objects.filter(id=ingredient['id']).exists():
+                ingr_id = ingredient['id']
+                if not Ingredient.objects.filter(id=ingr_id).exists():
                     return Response(
-                        {'error': f'Ингредиент с id={
-                            ingredient["id"]} не найден.'},
+                        {'error': f'Ингредиент с id={ingr_id} не найден.'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
         return super().update(request, *args, **kwargs)
