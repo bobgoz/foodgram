@@ -2,6 +2,10 @@ from pathlib import Path
 import os
 
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.foodgram-bobgoz.duckdns.org',
+]
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY')
