@@ -320,9 +320,9 @@ class FavoriteSerializer(serializers.ModelSerializer):
         validators = [
             serializers.UniqueTogetherValidator(
                 queryset=Favorite.objects.all(),
-                fields=('recipe','user',),
-                message='Рецепт уже в избранном.'
-            )
+                fields=('recipe', 'user'),
+                message='Рецепт уже в избранном.',
+            ),
         ]
 
     def validate_recipe(self, value):
