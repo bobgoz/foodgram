@@ -9,6 +9,7 @@ from foodgram.models import (
     Tag,
     Ingredient,
     RecipeIngredient,
+    Favorite,
 )
 from .constants import (
     AMOUNT_MIN_VALUE,
@@ -262,6 +263,8 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
 class RecipeShortSerializer(serializers.ModelSerializer):
     """Упрощенный сериализатор для вывода короткой информации о рецептах."""
 
+    image = Base64ImageField(read_only=True)
+
     class Meta:
         model = Recipe
         fields = ('id', 'name', 'image', 'cooking_time')
@@ -302,18 +305,26 @@ class SubscriptionSerializer(UserSerializer):
 class FavoriteSerializer(serializers.ModelSerializer):
     """Сериализатор для модели Избранные"""
 
-    image = serializers.SerializerMethodField()
+    recipe = RecipeShortSerializer(read_only=True)
+    user = serializers.PrimaryKeyRelatedField(
+        default=serializers.CurrentUserDefault(),
+        read_only=True,
+    )
 
     class Meta:
-        model = Recipe
+        model = Favorite
         fields = (
-            'id',
-            'name',
-            'image',
-            'cooking_time',
+            'recipe',
+            'user',
         )
+        validators = [
+            serializers.UniqueTogetherValidator(
+                queryset=Favorite.objects.all(),
+                fields=('recipe','user',),
+                message='Рецепт уже в избранном.'
+            )
+        ]
 
-    def get_image(self, obj):
-        if obj.image:
-            return self.context["request"].build_absolute_uri(obj.image.url)
-        return None
+    def validate_recipe(self, value):
+        if not Recipe.objects.filter(id=value.id).exists():
+            raise serializers.ValidationError('Рецепта не существует.')
