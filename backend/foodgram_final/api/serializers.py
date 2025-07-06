@@ -1,11 +1,22 @@
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from rest_framework import serializers, status
-from rest_framework.response import Response
+from django.db import transaction
+from rest_framework import serializers
 from djoser.serializers import UserSerializer
 from drf_extra_fields.fields import Base64ImageField
 
-from foodgram.models import Recipe, Tag, Ingredient, Token
+from foodgram.models import (
+    Recipe,
+    Tag,
+    Ingredient,
+    RecipeIngredient,
+)
+from .constants import (
+    AMOUNT_MIN_VALUE,
+    AMOUNT_MAX_VALUE,
+    COOKING_TIME_MIN_VALUE,
+    COOKING_TIME_MAX_VALUE,
+)
+from .fields import TagPrimaryKeyField
 
 User = get_user_model()
 
@@ -55,12 +66,20 @@ class UserSerializer(UserSerializer):
         return obj.following.filter(user=request.user).exists()
 
 
+# class IngredientShowSerializer(serializers.ModelSerializer):
+#     """Сериализатор, возвращающий информацию об ингредиентах."""
+
+#     class Meta:
+#         model = Ingredient
+#         fields = ('id', 'name', 'measurement_unit',)
+
+
 class RecipeSerializer(serializers.ModelSerializer):
     """Сериализатор для модели Рецепты. """
 
     tags = TagSerializer(many=True, read_only=True)
     author = UserSerializer(read_only=True)
-    ingredients = serializers.SerializerMethodField()
+    ingredients = IngredientSerializer(many=True)
     is_favorited = serializers.SerializerMethodField()
     is_in_shopping_cart = serializers.SerializerMethodField()
     image = Base64ImageField(required=True)
@@ -79,16 +98,6 @@ class RecipeSerializer(serializers.ModelSerializer):
             'cooking_time',
         )
         model = Recipe
-
-    def get_ingredients(self, obj):
-        """Получает список ингредиентов для вывода."""
-        ingredients = obj.ingredients.through.objects.filter(recipe=obj)
-        return [{
-            'id': ing.ingredient.id,
-            'name': ing.ingredient.name,
-            'measurement_unit': ing.ingredient.measurement_unit,
-            'amount': ing.amount
-        } for ing in ingredients]
 
     def get_is_favorited(self, obj):
         """
@@ -117,29 +126,20 @@ class RecipeIngredientInputSerializer(serializers.Serializer):
     сериализатора RecipeCreateUpdateSerializer.
     """
 
-    id = serializers.IntegerField()
-    amount = serializers.IntegerField(min_value=1)
-
-
-class TagPrimaryKeyField(serializers.PrimaryKeyRelatedField):
-    """
-    Кастомное поле PrimaryKeyRelatedField, которое обрабатывает как
-    обычные значения первичного ключа, так и словари с полем 'id'.
-
-    - Если входные данные — словарь (например, `{'id': 123}`), извлекает
-      значение `id
-      и проверяет его как первичный ключ.
-    - Если входные данные — обычное значение (например, `123`), проверяет его
-      стандартным способом.
-
-    Полезно для API, которые могут получать ссылки на теги в разных форматах:
-    как простые ID, так и вложенные объекты с ID.
-    """
-
-    def to_internal_value(self, data):
-        if isinstance(data, dict):
-            return super().to_internal_value(data['id'])
-        return super().to_internal_value(data)
+    id = serializers.PrimaryKeyRelatedField(
+        queryset=Ingredient.objects.all(),
+    )
+    amount = serializers.IntegerField(
+        min_value=AMOUNT_MIN_VALUE,
+        max_value=AMOUNT_MAX_VALUE,
+        error_messages={
+            'min_value':
+                f'Количество не может быть меньше {AMOUNT_MIN_VALUE}.',
+            'max_value':
+                f'Количество не может превышать {AMOUNT_MAX_VALUE}.',
+            'invalid': 'Введите целое число.'
+        },
+    )
 
 
 class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
@@ -152,6 +152,18 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
         queryset=Tag.objects.all()
     )
     image = Base64ImageField(required=True)
+    cooking_time = serializers.IntegerField(
+        max_value=COOKING_TIME_MIN_VALUE,
+        min_value=COOKING_TIME_MAX_VALUE,
+        error_messages={
+            'min_value':
+                ('Время готовки не '
+                 f'может быть меньше {COOKING_TIME_MIN_VALUE} минуты'),
+            'max_value':
+                ('Время готовки не '
+                 f'может превышать {COOKING_TIME_MAX_VALUE} минут'),
+        }
+    )
 
     class Meta:
         fields = (
@@ -163,17 +175,6 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
             'cooking_time',
         )
         model = Recipe
-
-    def validate(self, data):
-        if self.context['request'].method == 'PATCH':
-
-            if 'ingredients' not in data:
-                raise serializers.ValidationError(
-                    {'ingredients': 'Обязательное поле'})
-            if 'tags' not in data:
-                raise serializers.ValidationError(
-                    {'tags': 'Обязательное поле'})
-        return data
 
     def validate_ingredients(self, value):
         """Валидация поля Ингредиенты."""
@@ -200,66 +201,53 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
             )
         return value
 
-    def validate_cooking_time(self, value):
-        """
-        Проверяем, что время приготовления больше нуля.
-        """
-        if value == 0:
-            raise serializers.ValidationError(
-                "Время приготовления должно быть больше нуля"
-            )
-        return value
+    def _update_create_ingredients(recipe, ingredients_data):
+        """Метод для обновления и создания ингредиентов."""
+
+        # Удаляем все старые ингредиенты
+        recipe.ingredients.clear()
+
+        # Создаем новые связи одной операцией
+        RecipeIngredient.objects.bulk_create(
+            [
+                RecipeIngredient(
+                    recipe=recipe,
+                    ingredient=ingredient_data['id'],
+                    amount=ingredient_data['amount']
+                )
+                for ingredient_data in ingredients_data
+            ]
+        )
 
     def create(self, validated_data):
         """Обработка ингредиентов и тегов."""
 
-        try:
-            ingredients_data = validated_data.pop('ingredients')
-            tags_data = validated_data.pop('tags')
+        ingredients_data = validated_data.pop('ingredients')
+        tags_data = validated_data.pop('tags')
 
-            recipe = Recipe.objects.create(
-                **validated_data
-            )
-        except IntegrityError as e:
-            return Response(
-                {'error': {e}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Создание связей с ингредиентами.
-        for ingredient_data in ingredients_data:
-            recipe.ingredients.add(
-                ingredient_data['id'],
-                through_defaults={'amount': ingredient_data['amount']}
-            )
-
-        recipe.tags.set(tags_data)
+        with transaction.atomic():
+            recipe = super().create(validated_data)
+            self._update_create_ingredients(recipe, ingredients_data)
+            recipe.tags.set(tags_data)
 
         return recipe
 
     def update(self, instance, validated_data):
         """Обработка ингредиентов и тегов."""
 
+        # Извлечение полей с тегами и ингредиентами в отдельные переменные.
         ingredients_data = validated_data.pop('ingredients', None)
         tags_data = validated_data.pop('tags', None)
 
-        # Обновляем основные поля
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+        with transaction.atomic():
+            # Обновление основных полей.
+            recipe = super().update(instance, validated_data)
 
-        # Обновляем теги если они пришли
-        if tags_data is not None:
+            # Обновление тегов.
             instance.tags.set(tags_data)
 
-        # Обновляем ингредиенты если они пришли
-        if ingredients_data is not None:
-            instance.ingredients.clear()
-            for ingredient_data in ingredients_data:
-                instance.ingredients.add(
-                    ingredient_data['id'],
-                    through_defaults={'amount': ingredient_data['amount']}
-                )
+            # Обновление индегриентов.
+            self._update_create_ingredients(recipe, ingredients_data)
 
         return instance
 
@@ -309,27 +297,6 @@ class SubscriptionSerializer(UserSerializer):
             read_only=True,
             context={'request': request}
         ).data
-
-
-class TokenSerializer(serializers.ModelSerializer):
-    """Сериализатор для модели Token"""
-
-    class Meta:
-        model = Token
-        fields = '__all__'
-        extra_kwargs = {'full_url': {'validators': []}}
-
-    def create(self, validated_data):
-        """Создание токена """
-
-        full_url = validated_data['full_url']
-
-        token, created = Token.objects.get_or_create(full_url=full_url)
-        if created:
-            status_code = status.HTTP_201_CREATED
-        else:
-            status_code = status.HTTP_200_OK
-        return Token, status_code
 
 
 class FavoriteSerializer(serializers.ModelSerializer):
