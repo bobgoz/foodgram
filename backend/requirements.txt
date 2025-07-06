@@ -19,7 +19,7 @@ filetype==1.2.0
 flake8==7.3.0
 gunicorn==23.0.0
 h11==0.16.0
-idna==3.10F
+idna==3.10
 line_profiler==4.2.0
 Markdown==3.8
 mccabe==0.7.0
