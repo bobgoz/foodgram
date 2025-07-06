@@ -7,8 +7,6 @@ from drf_extra_fields.fields import Base64ImageField
 
 from foodgram.models import Recipe, Tag, Ingredient, Token
 
-from .utils import Base64ImageField
-
 User = get_user_model()
 
 

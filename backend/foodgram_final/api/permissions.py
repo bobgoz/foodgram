@@ -1,6 +1,4 @@
-from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import (
-    IsAuthenticated,
     BasePermission,
     SAFE_METHODS,
 )
