@@ -1,14 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
-
-from rest_framework import serializers
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.response import Response
+from djoser.serializers import UserSerializer
+from drf_extra_fields.fields import Base64ImageField
 
 from foodgram.models import Recipe, Tag, Ingredient, Token
 
 from .utils import Base64ImageField
-
 
 User = get_user_model()
 
@@ -32,9 +31,11 @@ class IngredientSerializer(serializers.ModelSerializer):
         model = Ingredient
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(UserSerializer):
+    """Сериализатор, наследуемый от сериализатора Djoser."""
+
     is_subscribed = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
+    avatar = Base64ImageField(required=True)
 
     class Meta:
         model = User
@@ -54,12 +55,6 @@ class UserSerializer(serializers.ModelSerializer):
         if not request.user.is_authenticated:
             return False
         return obj.following.filter(user=request.user).exists()
-
-    def get_avatar(self, obj):
-        """Возвращает булево значение в зависимости от наличия аватара."""
-        if obj.avatar:
-            return self.context['request'].build_absolute_uri(obj.avatar.url)
-        return None
 
 
 class RecipeSerializer(serializers.ModelSerializer):

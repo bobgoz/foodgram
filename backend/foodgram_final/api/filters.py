@@ -1,5 +1,4 @@
 from django_filters.rest_framework import filters, FilterSet
-
 from django.contrib.auth import get_user_model
 
 from foodgram.models import Recipe

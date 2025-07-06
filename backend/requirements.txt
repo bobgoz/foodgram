@@ -13,6 +13,8 @@ django-filter==25.1
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
 djoser==2.3.1
+drf-extra-fields==3.7.0
+drf_base64==2.0
 fastapi==0.115.12
 filetype==1.2.0
 flake8==7.3.0
