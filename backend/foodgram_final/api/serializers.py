@@ -196,10 +196,10 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
                 'Поле с тегами не должно быть пустым.'
             )
 
-        if len(value) != len(set(tag.id for tag in value)):
-            raise serializers.ValidationError(
-                'Теги не должны повторяться.'
-            )
+        # if len(value) != len(set(tag.id for tag in value)):
+        #     raise serializers.ValidationError(
+        #         'Теги не должны повторяться.'
+        #     )
         return value
 
     def _update_create_ingredients(recipe, ingredients_data):
