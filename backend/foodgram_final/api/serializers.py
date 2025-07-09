@@ -47,7 +47,7 @@ class UserSerializer(UserSerializer):
     """Сериализатор, наследуемый от сериализатора Djoser."""
 
     is_subscribed = serializers.SerializerMethodField()
-    avatar = Base64ImageField(required=True)
+    avatar = Base64ImageField(required=False)
 
     class Meta:
         model = User
@@ -311,7 +311,7 @@ class SubscriptionSerializer(UserSerializer):
     def create(self, validated_data):
         """Создание подписки."""
         return Subscription.objects.create(
-            author=validated_data['author'],
+            author=self.context['author'],
             user=self.context.get('user')
         )
 
@@ -337,7 +337,7 @@ class SubscriptionSerializer(UserSerializer):
         ).data
 
 
-class FavoriteSerializer(serializers.ModelSerializer):
+class FavoriteSerializer(serializers.Serializer):
     """Сериализатор для модели Избранные"""
 
     recipe = serializers.PrimaryKeyRelatedField(
@@ -366,7 +366,7 @@ class FavoriteSerializer(serializers.ModelSerializer):
         if not Recipe.objects.filter(id=value.id).exists():
             raise serializers.ValidationError('Рецепта не существует.')
         return value
-    
+
     def validate(self, attrs):
         request = self.context.get('request')
         user = request.user
@@ -393,14 +393,20 @@ class FavoriteSerializer(serializers.ModelSerializer):
         )
 
     def to_representation(self, instance):
-        return RecipeShortSerializer(instance.recipe).data
+        return RecipeShortSerializer(
+            instance.recipe).data
 
 
 class ShoppingCartSerializer(serializers.ModelSerializer):
     """Сериализатор для Корзины покупок."""
 
-    recipe = RecipeShortSerializer(read_only=True)
-    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    recipe = serializers.PrimaryKeyRelatedField(
+        queryset=Recipe.objects.all(),
+    )
+    user = serializers.PrimaryKeyRelatedField(
+        default=serializers.CurrentUserDefault(),
+        read_only=True,
+    )
 
     class Meta:
         model = ShoppingCart
@@ -438,6 +444,9 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
             user=self.context['request'].user,
             recipe=self.context['recipe'],
         )
+
+    def to_representation(self, instance):
+        return RecipeShortSerializer(instance.recipe).data
 
 
 class SubscribeSerializer(serializers.ModelSerializer):

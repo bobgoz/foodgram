@@ -71,7 +71,7 @@ class CustomUserViewSet(UserViewSet):
     pagination_class = LimitPageNumberPagination
     permission_classes = (CustomPermission,)
     filter_backends = (DjangoFilterBackend,)
-    
+
     def get_serializer_class(self):
         """Назначение сериализаторов для методов."""
         if self.action == 'subscribe':
@@ -81,7 +81,7 @@ class CustomUserViewSet(UserViewSet):
         if self.action == 'subscriptions':
             return SubscriptionSerializer
         return UserSerializer
-    
+
     @action(detail=True, methods=['POST'])
     def subscribe(self, request, id=None):
         """Создаёт эндпоинт для подписки на пользователей и отписки."""
@@ -94,6 +94,7 @@ class CustomUserViewSet(UserViewSet):
             context={
                 'request': request,
                 'user': user,
+                'autho': author,
                 }
             )
         serializer.is_valid(raise_exception=True)
@@ -167,16 +168,14 @@ class RecipeViewSet(ModelViewSet):
     def get_serializer_class(self):
         """Назначение сериализаторов для методов."""
 
-        if self.action in SAFE_METHODS:
-            return RecipeSerializer
-        elif self.action not in SAFE_METHODS:
-            return RecipeCreateUpdateSerializer
         if self.action == 'favorite':
             return FavoriteSerializer
-        if self.action == 'shopping_cart':
+        elif self.action == 'shopping_cart':
             return ShoppingCartSerializer
-        return RecipeShortSerializer
-
+        elif self.action in SAFE_METHODS:
+            return RecipeSerializer
+        else:
+            return RecipeCreateUpdateSerializer
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -192,8 +191,8 @@ class RecipeViewSet(ModelViewSet):
         recipe = self.get_object()
 
         serializer = self.get_serializer(
-            data={},
-            context = {
+            data={'recipe': recipe.id},
+            context={
                 'request': request,
                 'recipe': recipe,
             }
@@ -201,16 +200,13 @@ class RecipeViewSet(ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        response_serializer = self.get_serializer(
-            recipe,
-            context = {'request': request},
-        )
         return Response(
-            response_serializer.data,
+            serializer.data,
             status=status.HTTP_201_CREATED,
         )
     @favorite.mapping.delete
     def favorite_delete(self, request, pk=None):
+        recipe = self.get_object()
         Favorite.objects.filter(user=request.user, recipe=recipe).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -308,17 +304,18 @@ class RecipeViewSet(ModelViewSet):
         recipe = get_object_or_404(Recipe, pk=pk)
 
         serializer = self.get_serializer(
-            recipe,
-            context={'request': request},
+            data={
+                'recipe': recipe.id,
+                },
+            context={
+                'request': request,
+                'recipe': recipe,
+                },
             )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        recipe_short_serializer = self.get_serializer(
-            recipe,
-            context={'request': request},
-        )
         return Response(
-            recipe_short_serializer.data,
+            serializer.data,
             status=status.HTTP_201_CREATED,
             )
     @shopping_cart.mapping.delete
