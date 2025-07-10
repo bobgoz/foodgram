@@ -76,7 +76,7 @@ class Tag(models.Model):
                             max_length=128,
                             help_text='Название тэга')
     slug = models.SlugField(
-        'Тэг',
+        'Слаг',
         help_text='Слэг тэга',
         unique=True,
     )

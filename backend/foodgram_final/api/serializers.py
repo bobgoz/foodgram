@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction, models
+from django.db import transaction
 from rest_framework import serializers
 from djoser.serializers import UserSerializer
 from drf_extra_fields.fields import Base64ImageField
@@ -13,13 +13,13 @@ from foodgram.models import (
     ShoppingCart,
     Subscription,
 )
+
 from .constants import (
     AMOUNT_MIN_VALUE,
     AMOUNT_MAX_VALUE,
     COOKING_TIME_MIN_VALUE,
     COOKING_TIME_MAX_VALUE,
 )
-from .fields import TagPrimaryKeyField
 
 User = get_user_model()
 
@@ -120,7 +120,7 @@ class RecipeSerializer(serializers.ModelSerializer):
     )
     is_favorited = serializers.SerializerMethodField()
     is_in_shopping_cart = serializers.SerializerMethodField()
-    image = Base64ImageField(required=True)
+    image = Base64ImageField(read_only=True)
 
     class Meta:
         fields = (
@@ -184,7 +184,7 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
     """Сериализатор для создания и обновления рецептов."""
 
     ingredients = RecipeIngredientInputSerializer(required=True, many=True)
-    tags = serializers.ListField()
+    tags = serializers.ListField(required=True)
     image = Base64ImageField(required=True)
     cooking_time = serializers.IntegerField(
         max_value=COOKING_TIME_MAX_VALUE,
@@ -210,6 +210,27 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
         )
         model = Recipe
 
+    def validate_image(self, value):
+        """Валидация поля image"""
+        if not value:
+            raise serializers.ValidationError(
+                'Поле обязательно.'
+            )
+        return value
+
+    def validate(self, attrs):
+        """Дополнительная валидация."""
+        if not attrs.get('ingredients'):
+            raise serializers.ValidationError(
+                'Поле ingredient обязательно.'
+            )
+
+        if not attrs.get('tags'):
+            raise serializers.ValidationError(
+                'Поле tags обязательно.'
+            )
+        return attrs
+
     def validate_ingredients(self, value):
         """Валидация поля Ингредиенты."""
         if not value:
@@ -224,6 +245,17 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate_tags(self, value):
         """Валидация поля Теги."""
+        if not Tag.objects.filter(id__in=value).exists():
+            raise serializers.ValidationError(
+                'Таких тегов нет.'
+            )
+
+        tag_list = [tag for tag in value]
+        if len(tag_list) != len(set(tag_list)):
+            raise serializers.ValidationError(
+                'Теги не должны повторяться.'
+            )
+
         if not value:
             raise serializers.ValidationError(
                 'Поле с тегами не должно быть пустым.'
@@ -308,10 +340,29 @@ class SubscriptionSerializer(UserSerializer):
         fields = UserSerializer.Meta.fields + ('recipes', 'recipes_count',)
         read_only_fields = ('email', 'username', 'first_name', 'last_name')
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user
+        author = self.instance
+
+        if request.method == 'POST':
+            if Subscription.objects.filter(user=user, author=author).exists():
+                raise serializers.ValidationError(
+                    'Вы уже подписаны на этого пользователя.',
+                    code='duplicate',
+                )
+
+        if user == author:
+            raise serializers.ValidationError(
+                'Нельзя подписаться на себя.'
+            )
+
+        return attrs
+
     def create(self, validated_data):
         """Создание подписки."""
         return Subscription.objects.create(
-            author=self.context['author'],
+            author=self.context.get('author'),
             user=self.context.get('user')
         )
 
@@ -321,10 +372,7 @@ class SubscriptionSerializer(UserSerializer):
 
     def get_recipes(self, obj):
         """Получение рецепта."""
-
         request = self.context['request']
-        if not request:
-            return {}
         limit = request.query_params.get('recipes_limit')
         recipes = obj.recipes.all()
         if limit:
@@ -420,25 +468,6 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
             ),
         ]
 
-    def validate(self, attrs):
-        request = self.context.get('request')
-        user = request.user
-        recipe = self.context.get('recipe')
-
-        if request.method == 'POST':
-            if ShoppingCart.objects.filter(user=user, recipe=recipe).exists():
-                raise serializers.ValidationError(
-                    {'error': 'Рецепт уже есть в корзине покупок.'}
-                )
-
-        elif request.method == 'DELETE':
-            if not ShoppingCart.objects.filter(user=user, recipe=recipe).exists():
-                raise serializers.ValidationError(
-                    {'error': 'Данного рецепта нет в корзине покупок!'}
-                )
-
-        return attrs
-
     def create(self, validated_data):
         return ShoppingCart.objects.create(
             user=self.context['request'].user,
@@ -486,6 +515,11 @@ class AvatarSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('avatar',)
+
+    def validate(self, attrs):
+        if not attrs.get('avatar'):
+            raise serializers.ValidationError('Поле с аватаром обязательно.')
+        return attrs
 
     def update(self, instance, validated_data):
         instance.avatar = validated_data.get('avatar', instance.avatar)

@@ -1,14 +1,10 @@
-import base64
-import filetype
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404, redirect
-from django.core.files.base import ContentFile
 from django.conf import settings
 from django.http import HttpResponse
-from django.db.models import Sum, F, Value
-from django.db.models.functions import Coalesce
+from django.db.models import Sum
 from django.views import View
 
 from reportlab.pdfgen import canvas
@@ -18,7 +14,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, SAFE_METHODS, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework import pagination
 from rest_framework.response import Response
 from rest_framework import status
@@ -40,6 +36,7 @@ from foodgram.models import (
     Favorite,
     Token,
 )
+
 from .serializers import (
     RecipeSerializer,
     TagSerializer,
@@ -48,10 +45,7 @@ from .serializers import (
     UserSerializer,
     SubscriptionSerializer,
     FavoriteSerializer,
-    IngredientRecipeSerializer,
     ShoppingCartSerializer,
-    SubscribeSerializer,
-    RecipeShortSerializer,
     AvatarSerializer,
 )
 from .permissions import CustomPermission
@@ -69,6 +63,7 @@ class CustomUserViewSet(UserViewSet):
     """Кастомный ViewSet на основе Djoser UserViewSet."""
 
     pagination_class = LimitPageNumberPagination
+    serializer_class = UserSerializer
     permission_classes = (CustomPermission,)
     filter_backends = (DjangoFilterBackend,)
 
@@ -80,7 +75,7 @@ class CustomUserViewSet(UserViewSet):
             return AvatarSerializer
         if self.action == 'subscriptions':
             return SubscriptionSerializer
-        return UserSerializer
+        return super().get_serializer_class()
 
     @action(detail=True, methods=['POST'])
     def subscribe(self, request, id=None):
@@ -94,19 +89,19 @@ class CustomUserViewSet(UserViewSet):
             context={
                 'request': request,
                 'user': user,
-                'autho': author,
-                }
-            )
+                'author': author,
+            }
+        )
         serializer.is_valid(raise_exception=True)
         author_serializer = self.get_serializer(
             author,
             context={'request': request}
         )
         serializer.save(raise_exception=True)
-        return Response(author_serializer.data, 
+        return Response(author_serializer.data,
                         status=status.HTTP_201_CREATED)
 
-    subscribe.mapping.delete
+    @subscribe.mapping.delete
     def subscribe_delete(self, request, id=None):
         """Удаление подписки"""
 
@@ -126,9 +121,10 @@ class CustomUserViewSet(UserViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(
-            {'avatar': request.build_absolute_uri(user.avatar.url)},
+            {'avatar': request.build_absolute_uri(request.user.avatar.url)},
             status=status.HTTP_200_OK,
         )
+
     @load_avatar.mapping.delete
     def delete_avatar(self, request, pk=None):
         """Эндпоинт для удаления аватара"""
@@ -204,6 +200,7 @@ class RecipeViewSet(ModelViewSet):
             serializer.data,
             status=status.HTTP_201_CREATED,
         )
+
     @favorite.mapping.delete
     def favorite_delete(self, request, pk=None):
         recipe = self.get_object()
@@ -306,18 +303,19 @@ class RecipeViewSet(ModelViewSet):
         serializer = self.get_serializer(
             data={
                 'recipe': recipe.id,
-                },
+            },
             context={
                 'request': request,
                 'recipe': recipe,
-                },
-            )
+            },
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(
             serializer.data,
             status=status.HTTP_201_CREATED,
-            )
+        )
+
     @shopping_cart.mapping.delete
     def delete_shopping_cart(self, request, pk=None):
         """Удаление рецепта из корзины покупок."""
@@ -329,7 +327,7 @@ class RecipeViewSet(ModelViewSet):
         ).delete()
         return Response(
             status=status.HTTP_204_NO_CONTENT,
-            )
+        )
 
 
 class TagViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):

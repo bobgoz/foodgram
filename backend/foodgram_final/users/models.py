@@ -22,7 +22,7 @@ class User(AbstractUser):
     avatar = models.ImageField(
         'Картинка',
         upload_to='recipes/images/',
-        null=True,
+        null=False,
         default=None,
     )
     is_subscribed = models.BooleanField('Подписка', default=False)
