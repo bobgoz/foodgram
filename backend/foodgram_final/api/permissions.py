@@ -7,9 +7,6 @@ from rest_framework.permissions import (
 class CustomPermission(BasePermission):
     """Пермишен для проверки, что рецепт принадлежит автору."""
     def has_permission(self, request, view):
-        # Ограничение для отдельного эндпоинта
-        if view.action == 'me':
-            return request.user.is_authenticated
         return (request.method in SAFE_METHODS
                 or request.user and request.user.is_authenticated)
 

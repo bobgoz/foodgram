@@ -1,17 +1,16 @@
 from io import BytesIO
 
+from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404, redirect
 from django.conf import settings
 from django.http import HttpResponse
-from django.db.models import Sum
+from django.db.models import Sum, Count
 from django.views import View
-
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
@@ -22,18 +21,14 @@ from rest_framework.mixins import (ListModelMixin,
                                    RetrieveModelMixin,
                                    )
 from rest_framework.filters import SearchFilter
-from django_filters.rest_framework import DjangoFilterBackend
-
 from djoser.views import UserViewSet
 
 from foodgram.models import (
     Recipe,
     Tag,
     Ingredient,
-    ShoppingCart,
     Subscription,
     RecipeIngredient,
-    Favorite,
     Token,
 )
 
@@ -43,10 +38,14 @@ from .serializers import (
     IngredientSerializer,
     RecipeCreateUpdateSerializer,
     UserSerializer,
-    SubscriptionSerializer,
-    FavoriteSerializer,
+    SubscriptionCreateSerializer,
+    SubscriptionDeleteSerializer,
+    FavoriteCreateSerializer,
+    FavoriteDeleteSerializer,
     ShoppingCartSerializer,
+    ShoppingCartDeleteSerializer,
     AvatarSerializer,
+    SubscriptionShowSerializer,
 )
 from .permissions import CustomPermission
 from .filters import RecipeFilter
@@ -70,43 +69,40 @@ class CustomUserViewSet(UserViewSet):
     def get_serializer_class(self):
         """Назначение сериализаторов для методов."""
         if self.action == 'subscribe':
-            return SubscriptionSerializer
+            return SubscriptionCreateSerializer
+        if self.action == 'subscribe_delete':
+            return SubscriptionDeleteSerializer
         if self.action == 'load_avatar':
             return AvatarSerializer
         if self.action == 'subscriptions':
-            return SubscriptionSerializer
+            return SubscriptionShowSerializer
         return super().get_serializer_class()
 
     @action(detail=True, methods=['POST'])
     def subscribe(self, request, id=None):
         """Создаёт эндпоинт для подписки на пользователей и отписки."""
 
-        author = get_object_or_404(User, pk=id)
-        user = request.user
-
         serializer = self.get_serializer(
-            data={},
-            context={
-                'request': request,
-                'user': user,
-                'author': author,
-            }
+            data={
+                'author': id,
+            },
         )
         serializer.is_valid(raise_exception=True)
-        author_serializer = self.get_serializer(
-            author,
-            context={'request': request}
-        )
         serializer.save(raise_exception=True)
-        return Response(author_serializer.data,
+        return Response(serializer.data,
                         status=status.HTTP_201_CREATED)
 
     @subscribe.mapping.delete
     def subscribe_delete(self, request, id=None):
         """Удаление подписки"""
 
-        author = get_object_or_404(User, pk=id)
-        Subscription.objects.filter(user=request.user, author=author).delete()
+        serializer = self.get_serializer(
+            data={
+                'author': id,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['PUT'], url_path='me/avatar')
@@ -142,14 +138,21 @@ class CustomUserViewSet(UserViewSet):
         текущий пользователь.
         """
 
-        subscribed_users = User.objects.filter(following__user=request.user)
-        return self.get_paginated_response(
-            self.get_serializer(
-                self.paginate_queryset(subscribed_users),
-                many=True,
-                context={'request': request},
-            ).data
+        subscribed_users = User.objects.filter(
+            following__user=request.user,
+        ).annotate(
+            recipes_count=Count('recipes'),).order_by(
+                '-following__created_at'
         )
+
+        page = self.paginate_queryset(subscribed_users)
+        if page is not None:
+            serializer = self.get_serializer(
+                page, many=True,
+            )
+            return Response(serializer.data)
+        serializer = self.get_serializer(subscribed_users, many=True)
+        return Response(serializer.data)
 
 
 class RecipeViewSet(ModelViewSet):
@@ -165,10 +168,14 @@ class RecipeViewSet(ModelViewSet):
         """Назначение сериализаторов для методов."""
 
         if self.action == 'favorite':
-            return FavoriteSerializer
-        elif self.action == 'shopping_cart':
+            return FavoriteCreateSerializer
+        if self.action == 'favorite_delete':
+            return FavoriteDeleteSerializer
+        if self.action == 'shopping_cart':
             return ShoppingCartSerializer
-        elif self.action in SAFE_METHODS:
+        if self.action == 'delete_shopping_cart':
+            return ShoppingCartDeleteSerializer
+        if self.action in SAFE_METHODS:
             return RecipeSerializer
         else:
             return RecipeCreateUpdateSerializer
@@ -184,14 +191,10 @@ class RecipeViewSet(ModelViewSet):
     def favorite(self, request, pk=None):
         """Эндпоинт для добавления в избранные рецепты."""
 
-        recipe = self.get_object()
-
         serializer = self.get_serializer(
-            data={'recipe': recipe.id},
-            context={
-                'request': request,
-                'recipe': recipe,
-            }
+            data={
+                'recipe': pk,
+            },
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -203,8 +206,15 @@ class RecipeViewSet(ModelViewSet):
 
     @favorite.mapping.delete
     def favorite_delete(self, request, pk=None):
-        recipe = self.get_object()
-        Favorite.objects.filter(user=request.user, recipe=recipe).delete()
+        """Удаление из избранных."""
+
+        serializer = self.get_serializer(
+            data={
+                'recipe': pk,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['GET'], url_path='get-link')
@@ -298,15 +308,10 @@ class RecipeViewSet(ModelViewSet):
         в список покупок.
         """
 
-        recipe = get_object_or_404(Recipe, pk=pk)
-
         serializer = self.get_serializer(
             data={
-                'recipe': recipe.id,
-            },
-            context={
-                'request': request,
-                'recipe': recipe,
+                'recipe': pk,
+                'user': request.user.id,
             },
         )
         serializer.is_valid(raise_exception=True)
@@ -320,11 +325,13 @@ class RecipeViewSet(ModelViewSet):
     def delete_shopping_cart(self, request, pk=None):
         """Удаление рецепта из корзины покупок."""
 
-        recipe = get_object_or_404(Recipe, pk=pk)
-        ShoppingCart.objects.filter(
-            user=request.user,
-            recipe=recipe,
-        ).delete()
+        serializer = self.get_serializer(
+            data={
+                'recipe': pk,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.delete()
         return Response(
             status=status.HTTP_204_NO_CONTENT,
         )
@@ -350,7 +357,7 @@ class SubscriptionViewSet(ModelViewSet):
     """ViewSet для модели Подписки."""
 
     queryset = Subscription.objects.all()
-    serializer_class = SubscriptionSerializer
+    serializer_class = RecipeCreateUpdateSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = pagination.LimitOffsetPagination
 
