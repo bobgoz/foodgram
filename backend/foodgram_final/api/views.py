@@ -138,21 +138,18 @@ class CustomUserViewSet(UserViewSet):
         текущий пользователь.
         """
 
-        subscribed_users = User.objects.filter(
+        queryset = User.objects.filter(
             following__user=request.user,
         ).annotate(
             recipes_count=Count('recipes'),).order_by(
                 '-following__created_at'
         )
 
-        page = self.paginate_queryset(subscribed_users)
-        if page is not None:
-            serializer = self.get_serializer(
-                page, many=True,
-            )
-            return Response(serializer.data)
-        serializer = self.get_serializer(subscribed_users, many=True)
-        return Response(serializer.data)
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(
+            page, many=True,
+        )
+        return self.get_paginated_response(serializer.data)
 
 
 class RecipeViewSet(ModelViewSet):
