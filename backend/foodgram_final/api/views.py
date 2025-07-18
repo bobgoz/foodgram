@@ -85,10 +85,11 @@ class CustomUserViewSet(UserViewSet):
         serializer = self.get_serializer(
             data={
                 'author': id,
+                'user': request.user.id,
             },
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save(raise_exception=True)
+        serializer.save()
         return Response(serializer.data,
                         status=status.HTTP_201_CREATED)
 
@@ -224,7 +225,6 @@ class RecipeViewSet(ModelViewSet):
 
         full_url = request.build_absolute_uri(recipe.get_absolute_url())
 
-        # Проверяем существование токена или генерируем новый.
         token, created = Token.objects.get_or_create(
             full_url=full_url,
             defaults={
@@ -232,12 +232,10 @@ class RecipeViewSet(ModelViewSet):
             }
         )
 
-        # Обновляем счетчик, если ссылка существует.
         if not created:
             token.requests_count += 1
             token.save()
 
-        # Возвращаем короткую ссылку.
         short_link = f'{settings.BASE_SHORT_URL}/{token.short_url}'
         return Response(
             {'short-link': short_link},

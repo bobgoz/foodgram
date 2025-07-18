@@ -2,8 +2,6 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.contrib.auth.validators import UnicodeUsernameValidator
 
-from api.validators import validate_forbidden_usernames
-
 
 class User(AbstractUser):
     """Дополняет основную модель пользователя
@@ -16,7 +14,6 @@ class User(AbstractUser):
                                 blank=False,
                                 validators=[
                                     UnicodeUsernameValidator(),
-                                    validate_forbidden_usernames,
                                 ]
                                 )
     avatar = models.ImageField(

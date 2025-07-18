@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Count
 from rest_framework import serializers
+from rest_framework import validators
 from djoser.serializers import UserSerializer
 from drf_extra_fields.fields import Base64ImageField
 
@@ -20,7 +22,12 @@ from .constants import (
     COOKING_TIME_MIN_VALUE,
     COOKING_TIME_MAX_VALUE,
 )
-from .mixins import RecipePrimaryKeyMixin, AuthorPrimaryKeyMixin
+from .mixins import (
+    RecipePrimaryKeyMixin,
+    AuthorPrimaryKeyMixin,
+    BaseDeleteMixin,
+    BaseCreateMixin,
+)
 
 User = get_user_model()
 
@@ -153,7 +160,14 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
     """Сериализатор для создания и обновления рецептов."""
 
     ingredients = RecipeIngredientInputSerializer(required=True, many=True)
-    tags = serializers.ListField(required=True)
+    tags = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(),
+        error_messages={
+            'does_not_exist': 'Тэга с таким id не существует.',
+        },
+        many=True,
+        required=True,
+    )
     image = Base64ImageField(required=True)
     cooking_time = serializers.IntegerField(
         max_value=COOKING_TIME_MAX_VALUE,
@@ -198,15 +212,6 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 'Поле не должно быть пустым.'
             )
-
-        existing_tags = Tag.objects.filter(
-            id__in=value).values_list('id', flat=True)
-        non_existing_tags = set(value) - set(existing_tags)
-
-        if non_existing_tags:
-            raise serializers.ValidationError(
-                f"Теги с ID {non_existing_tags} не существуют"
-            )
         return value
 
     def validate_ingredients(self, value):
@@ -224,10 +229,8 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
     def _update_create_ingredients(self, recipe, ingredients_data):
         """Метод для обновления и создания ингредиентов."""
 
-        # Удаляем все старые ингредиенты
         recipe.ingredients.clear()
 
-        # Создаем новые связи одной операцией
         RecipeIngredient.objects.bulk_create(
             [
                 RecipeIngredient(
@@ -239,37 +242,31 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
             ]
         )
 
-    with transaction.atomic():
-        def create(self, validated_data):
-            """Обработка ингредиентов и тегов."""
+    @transaction.atomic
+    def create(self, validated_data):
+        """Обработка ингредиентов и тегов."""
 
-            ingredients_data = validated_data.pop('ingredients')
-            tags_data = validated_data.pop('tags')
+        ingredients_data = validated_data.pop('ingredients')
+        tags_data = validated_data.pop('tags')
 
-            recipe = super().create(validated_data)
-            self._update_create_ingredients(recipe, ingredients_data)
-            recipe.tags.set(tags_data)
+        recipe = super().create(validated_data)
+        recipe.tags.set(tags_data)
+        self._update_create_ingredients(recipe, ingredients_data)
 
-            return recipe
+        return recipe
 
-    with transaction.atomic():
-        def update(self, instance, validated_data):
-            """Обработка ингредиентов и тегов."""
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        """Обработка ингредиентов и тегов."""
 
-            # Извлечение полей с тегами и ингредиентами в отдельные переменные.
-            ingredients_data = validated_data.pop('ingredients', None)
-            tags_data = validated_data.pop('tags', None)
+        ingredients_data = validated_data.pop('ingredients')
+        tags_data = validated_data.pop('tags')
 
-            # Обновление основных полей.
-            recipe = super().update(instance, validated_data)
+        recipe = super().update(instance, validated_data)
+        instance.tags.set(tags_data)
+        self._update_create_ingredients(recipe, ingredients_data)
 
-            # Обновление тегов.
-            instance.tags.set(tags_data)
-
-            # Обновление индегриентов.
-            self._update_create_ingredients(recipe, ingredients_data)
-
-            return instance
+        return instance
 
     def to_representation(self, instance):
         """
@@ -294,72 +291,63 @@ class RecipeShortSerializer(serializers.ModelSerializer):
 
 class SubscriptionDeleteSerializer(
     AuthorPrimaryKeyMixin,
+    BaseDeleteMixin,
     serializers.Serializer,
 ):
     """
-    Сериализатор для удаления подписки
-    на основе сериализатора пользователя.
+    Сериализатор для удаления подписки.
     """
 
-    def validate(self, attrs):
-        user = self.context['request'].user
-        author = attrs['author']
-
-        subscribed = Subscription.objects.filter(
-            user=user,
-            author=author,
-        )
-        if not subscribed.exists():
-            raise serializers.ValidationError(
-                'Вы не подписаны на этого пользователя',
-                code='not found',
-            )
-        return attrs
-
-    def delete(self):
-        """Удаление из подписок."""
-        Subscription.objects.filter(
-            user=self.context['request'].user,
-            author=self.validated_data['author'],
-        ).delete()
+    relation_model = Subscription
+    relation_field = 'author'
+    not_found_message = 'Вы не подписаны на иэтого пользователя.'
 
 
 class SubscriptionCreateSerializer(
     AuthorPrimaryKeyMixin,
-    serializers.Serializer,
+    serializers.ModelSerializer,
 ):
     """
     Сериализатор для создания подписки.
     """
 
-    def validate(self, attrs):
+    author = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        error_messages={
+            'does_not_exist': 'Автора с таким id не существует.',
+        }
+    )
+
+    class Meta:
+        model = Subscription
+        fields = ('user', 'author',)
+        validators = [
+            validators.UniqueTogetherValidator(
+                queryset=Subscription.objects.all(),
+                fields=('user', 'author',),
+                message='Вы уже подписаны на этого пользователя.',
+            )
+        ]
+
+    def validate_author(self, value):
         """Валидация перед созданием подписки."""
         user = self.context['request'].user
-        author = attrs['author']
 
-        if Subscription.objects.filter(user=user, author=author).exists():
-            raise serializers.ValidationError(
-                'Вы уже подписаны на этого пользователя.',
-                code='duplicate',
-            )
+        if user == value:
 
-        if user == author:
             raise serializers.ValidationError(
                 'Нельзя подписаться на себя.'
             )
 
-        return attrs
-
-    def create(self, validated_data):
-        """Создание подписки."""
-        return Subscription.objects.create(
-            author=self.validated_data['author'],
-            user=self.context['request'].user,
-        )
+        return value
 
     def to_representation(self, instance):
+        author = User.objects.annotate(
+            recipes_count=Count('recipes')
+        ).get(pk=instance.author.pk)
+
         return SubscriptionShowSerializer(
-            instance.author,
+            author,
             context=self.context,
         ).data
 
@@ -372,7 +360,7 @@ class SubscriptionShowSerializer(UserSerializer):
     """
 
     recipes = serializers.SerializerMethodField(read_only=True)
-    recipes_count = serializers.SerializerMethodField(read_only=True)
+    recipes_count = serializers.IntegerField()
 
     class Meta(UserSerializer.Meta):
         fields = UserSerializer.Meta.fields + (
@@ -385,129 +373,61 @@ class SubscriptionShowSerializer(UserSerializer):
         request = self.context['request']
         limit = request.query_params.get('recipes_limit')
         recipes = obj.recipes.all()
+
         if limit:
             recipes = recipes[:int(limit)]
+
         return RecipeShortSerializer(
             recipes,
             many=True,
-            read_only=True,
-            context={'request': request}
+            context=self.context,
         ).data
-
-    def get_recipes_count(self, obj):
-        """Подсчет количества рецептов."""
-        return obj.recipes.count()
 
 
 class FavoriteCreateSerializer(
     RecipePrimaryKeyMixin,
+    BaseCreateMixin,
     serializers.ModelSerializer,
 ):
     """Сериализатор для создания избранных."""
 
-    user = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        default=serializers.CurrentUserDefault(),
-    )
-
-    class Meta:
-        model = Favorite
-        fields = (
-            'recipe',
-            'user',
-        )
-        validators = [
-            serializers.UniqueTogetherValidator(
-                queryset=Favorite.objects.all(),
-                fields=('recipe', 'user'),
-                message='Рецепт уже в избранном.',
-            ),
-        ]
-
-    def to_representation(self, instance):
-        return RecipeShortSerializer(
-            instance.recipe,
-            context=self.context,
-        ).data
+    relation_model = Favorite
+    message = 'Рецепт уже в избранном.'
 
 
 class FavoriteDeleteSerializer(
     RecipePrimaryKeyMixin,
-    serializers.Serializer
+    BaseDeleteMixin,
+    serializers.Serializer,
 ):
     """Сериализатор для удаления из избранных"""
 
-    def validate(self, attrs):
-        """Проверка на существование избранного перед удалением."""
-        user = self.context['request'].user
-        recipe = attrs['recipe']
-        if not Favorite.objects.filter(user=user, recipe=recipe).exists():
-            raise serializers.ValidationError(
-                'Рецепта нет в избранном для удаления.',
-            )
-        return attrs
-
-    def delete(self):
-        """Удаление из избранных."""
-        Favorite.objects.filter(
-            user=self.context['request'].user,
-            recipe=self.validated_data['recipe'],
-        ).delete()
+    relation_model = Favorite
+    relation_field = 'recipe'
+    not_found_message = 'Рецепта нет в избранном для удаления.'
 
 
 class ShoppingCartDeleteSerializer(
     RecipePrimaryKeyMixin,
+    BaseDeleteMixin,
     serializers.Serializer,
 ):
     """Сериализатор для удаления из Корзины покупок."""
 
-    def validate(self, attrs):
-        user = self.context['request'].user
-        if not ShoppingCart.objects.filter(
-            user=user,
-            recipe=attrs['recipe'],
-        ).exists():
-            raise serializers.ValidationError(
-                'Нет рецепта в корзине покупок для удаления.'
-            )
-
-        return attrs
-
-    def delete(self):
-        """Удаление из корзины покупок."""
-        ShoppingCart.objects.filter(
-            user=self.context['request'].user,
-            recipe=self.validated_data['recipe'],
-        ).delete()
+    relation_model = ShoppingCart
+    relation_field = 'recipe'
+    not_found_message = 'Нет рецепта в корзине покупок для удаления.'
 
 
 class ShoppingCartSerializer(
     RecipePrimaryKeyMixin,
+    BaseCreateMixin,
     serializers.ModelSerializer,
 ):
     """Сериализатор для Корзины покупок."""
-    user = serializers.PrimaryKeyRelatedField(
-        default=serializers.CurrentUserDefault(),
-        queryset=User.objects.all(),
-    )
 
-    class Meta:
-        model = ShoppingCart
-        fields = ('id', 'user', 'recipe', 'added_at',)
-        read_only_fields = ('user', 'added_at')
-        validators = [
-            serializers.UniqueTogetherValidator(
-                queryset=ShoppingCart.objects.all(),
-                fields=('recipe', 'user'),
-                message='Рецепт уже в корзине покупок.',
-            ),
-        ]
-
-    def to_representation(self, instance):
-        return RecipeShortSerializer(
-            instance.recipe,
-            context=self.context,
-        ).data
+    relation_model = ShoppingCart
+    message = 'Рецепт уже в корзине покупок.'
 
 
 class AvatarSerializer(serializers.ModelSerializer):
