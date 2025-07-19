@@ -1,37 +1,99 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.db.models import Count
+from django.contrib.auth.admin import UserAdmin
 
-from foodgram.models import Ingredient, Recipe, Tag, Token
+from foodgram.models import (
+    Ingredient,
+    Recipe,
+    Tag,
+    Favorite,
+    RecipeIngredient,
+    ShoppingCart,
+    Subscription,
+)
 
 User = get_user_model()
 
 
+@admin.register(Favorite)
+class FavoriteAdmin(admin.ModelAdmin):
+    """Настройка админки для избранных."""
+
+    list_display = (
+        'user',
+        'recipe',
+        'added_at',
+    )
+
+
+@admin.register(RecipeIngredient)
+class RecipeIngredientAdmin(admin.ModelAdmin):
+    """Настройка админки для Ингредиентов в рецептах."""
+
+    list_display = (
+        'ingredient',
+        'recipe',
+        'amount',
+    )
+
+
+@admin.register(ShoppingCart)
+class ShoppingCartAdmin(admin.ModelAdmin):
+    """Настройка админки для корзины покупок."""
+
+    list_display = (
+        'recipe',
+        'user',
+        'added_at',
+    )
+
+
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    """Настройка админки для подписок."""
+
+    list_display = (
+        'user',
+        'author',
+        'created_at',
+    )
+
+
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(UserAdmin):
     """Настройка админки для модели пользователя."""
 
     list_display = (
+        'username',
         'id',
+        'first_name',
+        'last_name',
+        'email',
+        'avatar',
+        'is_active',
+        'password',
+    )
+    search_fields = (
         'email',
         'username',
-        'avatar',
-        'is_subscribed',
-        'is_active',
         'first_name',
         'last_name',
     )
-    search_fields = ('email', 'username',)
 
 
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
+    """Настройка админки для тегов."""
 
     list_display = ('id', 'name', 'slug',)
+
+    search_fields = ('name', 'slug',)
 
 
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
+    """Настройка админки для ингредиентов."""
 
     list_display = ('measurement_unit', 'name',)
     search_fields = ('name',)
@@ -39,11 +101,12 @@ class IngredientAdmin(admin.ModelAdmin):
 
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
+    """Настройка админки для рецептов."""
 
     list_display = (
         'id',
-        'author',
         'name',
+        'author',
         'text',
         'image',
         'cooking_time',
@@ -51,7 +114,7 @@ class RecipeAdmin(admin.ModelAdmin):
         'created_at',
         'get_favorites_count',
     )
-    search_fields = ('author', 'name',)
+    search_fields = ('author__username', 'name',)
     list_filter = (
         ('tags', admin.RelatedOnlyFieldListFilter),
     )
@@ -64,18 +127,3 @@ class RecipeAdmin(admin.ModelAdmin):
     @admin.display(description='Добавлений в избранное')
     def get_favorites_count(self, obj):
         return getattr(obj, '_favorites_count', 0)
-
-
-@admin.register(Token)
-class TokenAdmin(admin.ModelAdmin):
-    """Настройки админки для модели Token"""
-
-    list_display = (
-        'full_url',
-        'short_url',
-        'requests_count',
-        'created_at',
-        'is_active',
-    )
-    search_fields = ('full_url', 'short_url')
-    ordering = ('-created_at',)

@@ -77,7 +77,7 @@ class Tag(models.Model):
                             help_text='Название тэга')
     slug = models.SlugField(
         'Слаг',
-        help_text='Слэг тэга',
+        help_text='Слэг тега',
         unique=True,
     )
 
@@ -85,9 +85,8 @@ class Tag(models.Model):
         return self.name
 
     class Meta:
-        verbose_name = 'Тэг'
-        verbose_name_plural = 'Тэги'
-        default_related_name = 'tags'
+        verbose_name = 'Тег'
+        verbose_name_plural = 'Теги'
 
 
 class Ingredient(models.Model):
@@ -125,30 +124,38 @@ class Ingredient(models.Model):
     class Meta:
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
-        default_related_name = 'ingredients'
 
 
 class RecipeIngredient(models.Model):
-    """Промежуточная модель для связи моделя Рецепт и Ингредиент."""
+    """Промежуточная модель для связи моделя Рецепта и Ингредиента."""
 
     recipe = models.ForeignKey(
         Recipe,
         on_delete=models.CASCADE,
-        related_name='recipe_ingredients',
+        verbose_name='Рецепт',
     )
     ingredient = models.ForeignKey(
         Ingredient,
         on_delete=models.CASCADE,
+        verbose_name='Ингредиент',
     )
-    amount = models.PositiveSmallIntegerField()
+    amount = models.PositiveSmallIntegerField(
+        verbose_name='Сумма',
+    )
 
     class Meta:
+        verbose_name = 'Индегриент рецепта'
+        verbose_name_plural = 'Индегриенты рецептов'
+        default_related_name = 'recipe_ingredients'
         constraints = [
             models.UniqueConstraint(
                 fields=['recipe', 'ingredient'],
                 name='unique_ingredient_in_recipe'
             )
         ]
+
+    def __str__(self):
+        return f'Ингредиент {self.ingredient} рецепта {self.recipe}'
 
 
 class ShoppingCart(models.Model):
