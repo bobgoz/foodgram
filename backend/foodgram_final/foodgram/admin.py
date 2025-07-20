@@ -26,6 +26,11 @@ class FavoriteAdmin(admin.ModelAdmin):
         'added_at',
     )
 
+    search_fields = (
+        'user__username',
+        'recipe__name',
+    )
+
 
 @admin.register(RecipeIngredient)
 class RecipeIngredientAdmin(admin.ModelAdmin):
@@ -36,6 +41,12 @@ class RecipeIngredientAdmin(admin.ModelAdmin):
         'recipe',
         'amount',
     )
+
+    search_fields = (
+        'recipe__name',
+        'ingredient__name',
+    )
+
 
 
 @admin.register(ShoppingCart)
@@ -48,6 +59,12 @@ class ShoppingCartAdmin(admin.ModelAdmin):
         'added_at',
     )
 
+    search_fields = (
+        'recipe__name',
+        'user__username',
+    )
+
+
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
@@ -57,6 +74,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
         'user',
         'author',
         'created_at',
+    )
+
+    search_fields = (
+        'author__username',
+        'user__username',
     )
 
 
@@ -114,7 +136,14 @@ class RecipeAdmin(admin.ModelAdmin):
         'created_at',
         'get_favorites_count',
     )
-    search_fields = ('author__username', 'name',)
+    search_fields = (
+        'author__username',
+        'name',
+        'text',
+        'ingredients__name',
+        'tags__name',
+        'cooking_time',
+    )
     list_filter = (
         ('tags', admin.RelatedOnlyFieldListFilter),
     )
