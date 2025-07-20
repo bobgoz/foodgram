@@ -48,7 +48,6 @@ class RecipeIngredientAdmin(admin.ModelAdmin):
     )
 
 
-
 @admin.register(ShoppingCart)
 class ShoppingCartAdmin(admin.ModelAdmin):
     """Настройка админки для корзины покупок."""
@@ -63,7 +62,6 @@ class ShoppingCartAdmin(admin.ModelAdmin):
         'recipe__name',
         'user__username',
     )
-
 
 
 @admin.register(Subscription)
